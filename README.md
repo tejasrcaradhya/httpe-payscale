@@ -1,7 +1,7 @@
 # HTTPE — High-Throughput Transaction Processing Engine
 
 **Project:** Software Engineer — High-Throughput Transaction Processing Engine (HTTPE)
-**Simulation Scenario:** PayScale Financial Technologies — scaling from 1,200 TPS to 12,000+ TPS ahead of a Diwali festive-season campaign.
+**Simulation Scenario:** PayScale Financial Technologies — scaling from 1,200 TPS to 12,000+ TPS .
 
 ---
 
