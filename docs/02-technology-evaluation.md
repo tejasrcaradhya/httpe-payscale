@@ -1,66 +1,83 @@
-# Technology Evaluation: HTTPE — PayScale
+Technology Evaluation — HTTPE PayScale
+Methodology
 
-## Methodology
+Each candidate technology is evaluated from 1–5, where 5 represents the best fit. The evaluation considers:
 
-Each candidate technology is scored 1–5 (5 = best fit) across five criteria: **Performance** (ability to hit 12,000+ TPS / sub-100ms p99), **Operational Complexity** (lower score = harder to run), **Cost** (fit within the $45,000/month ceiling), **Team Expertise Compatibility** (existing team is Java/Kotlin + PostgreSQL), and **Community Support** (documentation, maturity, troubleshooting resources). Raw totals are a starting signal, not the final word — where a hard non-functional requirement (like NFR-001's 12,000 TPS floor) is at stake, that criterion is weighted more heavily in the final decision, explained under each table.
+Performance — ability to support the target of 12,000+ TPS and sub-100 ms p99 latency.
+Operational Complexity — ease of deployment, monitoring, scaling, and troubleshooting.
+Cost — ability to remain within the $45,000/month infrastructure budget.
+Team Expertise Compatibility — alignment with the team's existing Java/Kotlin and PostgreSQL experience.
+Community Support — maturity, documentation, ecosystem, and availability of troubleshooting resources.
 
----
+The raw score provides an initial comparison, but hard NFRs are given greater weight in the final decision. In particular, the 12,000 TPS requirement is treated as a gating requirement rather than simply another scoring category.
 
-## 1. Database Layer: PostgreSQL+Citus vs. CockroachDB vs. TiDB
+1. Database Layer
+PostgreSQL + Citus vs. CockroachDB vs. TiDB
+Criterion	PostgreSQL + Citus	CockroachDB	TiDB
+Performance	4	4	4
+Operational Complexity	3	3	2
+Cost	4	3	3
+Team Expertise Compatibility	5	2	1
+Community Support	4	4	3
+Total	20/25	16/25	13/25
+Decision: PostgreSQL 15 + Citus
 
-| Criterion | PostgreSQL + Citus | CockroachDB | TiDB |
-|---|---|---|---|
-| Performance | 4 | 4 | 4 |
-| Operational Complexity | 3 | 3 | 2 |
-| Cost | 4 | 3 | 3 |
-| Team Expertise Compatibility | 5 | 2 | 1 |
-| Community Support | 4 | 4 | 3 |
-| **Total (/25)** | **20** | **16** | **13** |
+PostgreSQL + Citus provides the strongest balance between scalability and implementation risk. Citus extends PostgreSQL into a distributed database while retaining PostgreSQL as the underlying technology, allowing the team to reuse existing SQL knowledge, tooling, and operational experience. It supports distributed tables, parallel query execution, and sharding across multiple PostgreSQL nodes.
 
-**Why the gap is bigger than it looks:** CockroachDB and TiDB are both capable distributed databases, but the team's only production database expertise is PostgreSQL. Citus is an extension *on top of* standard PostgreSQL 15 — the SQL dialect, tooling, and operational knowledge the team already has carries over almost unchanged. CockroachDB and TiDB both require learning a new engine's query planner, indexing behavior, and failure modes inside a 15-day build window, which is a real execution risk on a hard deadline.
+CockroachDB and TiDB are technically capable alternatives, but adopting either would introduce a new database engine, query planner, indexing behavior, and operational model. With a 15-day implementation window, that additional learning and migration risk is not justified when the team already has PostgreSQL expertise.
 
-**Selected: PostgreSQL + Citus.** Full reasoning in `adrs/002-database-selection.md`.
+Selected technology: PostgreSQL 15 + Citus
 
----
+2. Message Queue / Event Bus
+Apache Kafka vs. RabbitMQ Cluster vs. Amazon SQS
+Criterion	Apache Kafka	RabbitMQ Cluster	Amazon SQS
+Performance	5	2	3
+Operational Complexity	2	4	5
+Cost	3	4	2
+Team Expertise Compatibility	2	3	3
+Community Support	5	4	3
+Total	17/25	17/25	16/25
+Decision: Apache Kafka
 
-## 2. Message Queue: Apache Kafka vs. RabbitMQ (clustered) vs. Amazon SQS
+Kafka is selected even though its raw score is tied with RabbitMQ because performance is a hard requirement for this system.
 
-| Criterion | Kafka | RabbitMQ (clustered) | Amazon SQS |
-|---|---|---|---|
-| Performance | 5 | 2 | 3 |
-| Operational Complexity | 2 | 4 | 5 |
-| Cost | 3 | 4 | 2 |
-| Team Expertise Compatibility | 2 | 3 | 3 |
-| Community Support | 5 | 4 | 3 |
-| **Total (/25)** | **17** | **17** | **16** |
+The target is 12,000 TPS sustained with bursts up to 18,000 TPS. RabbitMQ has already demonstrated a bottleneck at approximately 2,000 TPS in the existing system, making it a poor choice for the redesigned architecture.
 
-**Why Kafka wins despite a tied raw score:** The raw scores are close, but Performance is not just "one of five criteria" here — it's a hard, non-negotiable requirement (NFR-001: 12,000 TPS sustained, bursting to 18,000). RabbitMQ has *already* been load-tested and shown to exhaust at 2,000 TPS with 30-second consumer lag (bottleneck BN-002) — it's not a hypothetical weakness, it's the system currently in front of us. SQS's FIFO throughput ceiling (roughly 3,000 msg/s with batching) would require splitting traffic across many queues just to reach target load, adding complexity that erases its "fully managed" advantage, and per-request pricing at sustained 12,000 TPS gets expensive fast. Kafka's partitioned log model is also a much more natural fit for the exactly-once semantics (FR-003) and immutable audit trail (FR-004) requirements, since events can be replayed rather than just consumed once and discarded.
+Kafka's partitioned log architecture allows workload to be distributed across brokers and provides durable event storage. Kafka also supports different delivery semantics, including exactly-once processing when the producer, consumer, and destination are configured appropriately.
 
-**Selected: Apache Kafka.** Full reasoning in `adrs/001-message-queue-selection.md`.
+Kafka is also a particularly strong fit for PayScale because events can be retained and replayed. This supports the system's auditability and recovery requirements rather than treating messages as disposable work items.
 
----
+SQS would reduce operational overhead, but its throughput and pricing characteristics at sustained high traffic would need careful architecture and cost validation. Kafka provides greater control over partitioning, retention, replay, and throughput.
 
-## 3. Cache Layer: Redis Cluster vs. Memcached vs. Hazelcast
+Selected technology: Apache Kafka — 3-broker cluster
 
-| Criterion | Redis Cluster | Memcached | Hazelcast |
-|---|---|---|---|
-| Performance | 5 | 4 | 4 |
-| Operational Complexity | 3 | 4 | 3 |
-| Cost | 4 | 4 | 3 |
-| Team Expertise Compatibility | 4 | 2 | 3 |
-| Community Support | 5 | 3 | 3 |
-| **Total (/25)** | **21** | **17** | **16** |
+3. Cache Layer
+Redis Cluster vs. Memcached vs. Hazelcast
+Criterion	Redis Cluster	Memcached	Hazelcast
+Performance	5	4	4
+Operational Complexity	3	4	3
+Cost	4	4	3
+Team Expertise Compatibility	4	2	3
+Community Support	5	3	3
+Total	21/25	17/25	16/25
+Decision: Redis Cluster
 
-**Why:** The team already runs single-node Redis today, so a Redis Cluster is an incremental step rather than a new tool. It's also the only option with native atomic compare-and-swap (WATCH/MULTI/EXEC) needed for idempotency-key checks (FR-002) and built-in TTL support, pub/sub for notification fan-out, and per-tier rate-limit counters (BASIC/PREMIUM/MERCHANT tiers from the accounts schema). Memcached has no persistence or native CAS; Hazelcast is JVM-native (a plus for the Java/Kotlin team) but has a smaller community and less precedent in this exact fintech caching pattern.
+Redis provides the strongest combination of performance, functionality, and existing team familiarity.
 
-**Selected: Redis Cluster (6 nodes, 96GB total)** — matches the target architecture already specified in the scenario data (Section A3.1).
+The team already operates Redis, making a move to Redis Cluster considerably less risky than introducing a completely new caching technology. Redis transactions provide atomic execution, while WATCH supports optimistic check-and-set behavior that can be useful for idempotency workflows.
 
----
+Redis also provides TTL-based expiration, making it suitable for:
 
-## Summary of Picks Feeding Into Day 2 ADRs
+Idempotency keys
+API response caching
+Rate-limit counters
+Short-lived session/state data
+Notification fan-out
 
-| Component | Selected Technology | ADR |
-|---|---|---|
-| Message Queue / Event Bus | Apache Kafka (3-broker cluster) | ADR-001 |
-| Database Layer | PostgreSQL 15 + Citus | ADR-002 |
-| Cache Layer | Redis Cluster (6 nodes) | *(ADR to follow on Day 8 — Cache Invalidation Strategy)* |
+Selected technology: Redis Cluster — 6 nodes / 96 GB total
+
+Final Technology Selection
+Component	Selected Technology	Key Reason
+Database	PostgreSQL 15 + Citus	PostgreSQL expertise + distributed scalability
+Message Queue	Apache Kafka	Meets high-throughput event-processing requirements
+Cache	Redis Cluster	Performance + existing expertise + atomic operations
