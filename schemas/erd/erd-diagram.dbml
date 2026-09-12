@@ -1,0 +1,107 @@
+// HTTPE — PayScale: Entity-Relationship Diagram (DBML)
+// Paste this into https://dbdiagram.io to render/edit visually.
+
+Table users {
+  user_id uuid [pk]
+  full_name varchar
+  phone_number varchar [unique]
+  email varchar [unique]
+  kyc_status kyc_status_enum
+  kyc_document_type kyc_document_type_enum
+  kyc_document_number_hash varchar
+  date_of_birth date
+  risk_rating risk_rating_enum
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table accounts {
+  account_id uuid [pk]
+  user_id uuid [ref: > users.user_id]
+  account_type account_type_enum
+  currency char2
+  available_balance decimal
+  ledger_balance decimal
+  version bigint
+  status account_status_enum
+  tier account_tier_enum
+  shard_key int
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table transactions {
+  transaction_id uuid [pk]
+  idempotency_key varchar [unique]
+  transaction_type transaction_type_enum
+  source_account_id uuid [ref: > accounts.account_id]
+  destination_account_id uuid [ref: > accounts.account_id]
+  amount decimal
+  status transaction_status_enum
+  saga_id uuid
+  failure_reason varchar
+  created_at timestamptz [note: 'partitioned monthly']
+  completed_at timestamptz
+  metadata jsonb
+}
+
+Table ledger_entries {
+  ledger_entry_id uuid [pk]
+  transaction_id uuid [ref: > transactions.transaction_id]
+  account_id uuid [ref: > accounts.account_id]
+  entry_type ledger_entry_type_enum
+  amount decimal
+  balance_after decimal
+  currency char2
+  created_at timestamptz [note: 'partitioned monthly, append-only']
+}
+
+Table transaction_events {
+  event_id uuid [pk]
+  transaction_id uuid [ref: > transactions.transaction_id]
+  saga_id uuid
+  event_type txn_event_type_enum
+  from_state varchar
+  to_state varchar
+  payload jsonb
+  created_at timestamptz [note: 'append-only']
+}
+
+Table fraud_rules {
+  rule_id uuid [pk]
+  rule_name varchar [unique]
+  rule_type fraud_rule_type_enum
+  rule_definition jsonb
+  severity fraud_rule_severity_enum
+  is_active boolean
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table merchant_settlements {
+  settlement_id uuid [pk]
+  merchant_account_id uuid [ref: > accounts.account_id]
+  settlement_batch_id uuid
+  gross_amount decimal
+  fee_amount decimal
+  net_amount decimal
+  transaction_count int
+  status settlement_status_enum
+  settlement_date date
+  created_at timestamptz
+  completed_at timestamptz
+
+  Note: 'unique(merchant_account_id, settlement_date) enforces idempotent settlement'
+}
+
+Table notification_log {
+  notification_id uuid [pk]
+  transaction_id uuid [ref: > transactions.transaction_id]
+  user_id uuid [ref: > users.user_id]
+  channel notification_channel_enum
+  status notification_status_enum
+  payload jsonb
+  attempt_count int
+  created_at timestamptz
+  delivered_at timestamptz
+}
