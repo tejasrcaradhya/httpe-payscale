@@ -1,0 +1,94 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="System Architecture" id="httpe-arch">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="950" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="boundary" value="AWS ap-south-1 (Mumbai) — RBI Data Residency Boundary (all payment data stays within India)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=left;fontSize=12;fontColor=#666666;spacingTop=5;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="860" height="730" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n1" value="Clients&#10;(Mobile App / Merchant Systems)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="360" y="0" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n2" value="Load Balancer&#10;(AWS ALB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="360" y="100" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n3" value="API Gateway&#10;(Envoy Proxy)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="360" y="190" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n4" value="Transaction Orchestrator&#10;(Saga State Machine)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="280" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n5" value="Payment Processing&#10;Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="80" y="390" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n6" value="Account Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="390" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n7" value="Fraud Detection Service&#10;(15ms SLA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="660" y="390" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n8" value="Apache Kafka Event Bus (3-broker cluster, RF=3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="80" y="500" width="800" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n9" value="Notification Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="80" y="610" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n10" value="Reconciliation Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="360" y="610" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n11" value="Audit &amp; Compliance Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="660" y="610" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n12" value="PostgreSQL 15 + Citus&#10;(Sharded, Multi-AZ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="220" y="720" width="260" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n13" value="Redis Cluster&#10;(6 nodes, 96GB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="560" y="720" width="260" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n14" value="Observability Stack&#10;Prometheus + Grafana&#10;Jaeger, ELK/Loki" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="-260" y="300" width="220" height="420" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="n1" target="n2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="n2" target="n3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="n3" target="n4"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e4" value="sync" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n4" target="n5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="sync" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n4" target="n6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="sync, 15ms SLA" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n4" target="n7"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e7" value="publish (Outbox Pattern)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n5" target="n8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="read/write balance (OCC)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n6" target="n12"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="idempotency check" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n5" target="n13"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="feature store lookup" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n7" target="n13"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="n8" target="n9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="n8" target="n10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="n8" target="n11"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e14" value="read-replica queries" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="n10" target="n12"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e15" value="metrics/traces/logs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=9;fontColor=#b85450;strokeColor=#b85450;" edge="1" parent="1" source="n4" target="n14"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#b85450;" edge="1" parent="1" source="n8" target="n14"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#b85450;" edge="1" parent="1" source="n12" target="n14"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
