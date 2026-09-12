@@ -1,0 +1,35 @@
+@startuml Batch_Merchant_Settlement
+title Batch Merchant Settlement Flow
+autonumber
+
+participant "Scheduler (cron)" as CRON
+participant "Settlement Service" as SETTLE
+database "PostgreSQL + Citus" as DB
+queue "Kafka Event Bus" as KAFKA
+participant "Notification Service" as NOTIF
+
+CRON -> SETTLE: trigger nightly settlement job
+SETTLE -> DB: SELECT pending merchant transactions\nsince last settlement (batch, up to 100,000 — FR-006)
+DB --> SETTLE: transaction batch
+SETTLE -> SETTLE: group by merchant_id,\ncompute net settlement amount (debits - fees)
+
+loop for each merchant in batch
+    SETTLE -> DB: BEGIN
+    SETTLE -> DB: INSERT merchant_settlements record
+    SETTLE -> DB: UPDATE settlement_pool account balance
+    alt settlement write succeeds
+        SETTLE -> DB: COMMIT
+        SETTLE ->> KAFKA: [async] publish settlement-completed event
+    else DB error for this merchant
+        SETTLE -> DB: ROLLBACK
+        SETTLE -> SETTLE: flag merchant for retry next cycle\n(rest of batch continues — partial-batch isolation)
+    end
+end
+
+KAFKA ->> NOTIF: [async] consume settlement-completed events
+NOTIF ->> NOTIF: notify each merchant (email / SMS / webhook)
+
+SETTLE -> DB: mark batch as SETTLED, record completion timestamp
+
+note over SETTLE: Job is idempotent — re-running for the same day\nskips merchants already marked SETTLED, so a\nscheduler retry never double-settles a merchant.
+@enduml

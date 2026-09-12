@@ -1,0 +1,137 @@
+@startuml P2P_Payment_HappyPath
+title P2P Payment — Happy Path
+autonumber
+
+actor Client
+participant "API Gateway" as GW
+participant "Transaction Orchestrator" as ORCH
+participant "Fraud Detection Service" as FRAUD
+participant "Payment Processing Service" as PAY
+participant "Account Service" as ACC
+database "Redis Cluster" as REDIS
+database "PostgreSQL + Citus" as DB
+queue "Kafka Event Bus" as KAFKA
+participant "Notification Service" as NOTIF
+
+Client -> GW: POST /transactions (idempotency_key, amount, src, dst)
+GW -> ORCH: forward request
+ORCH -> REDIS: GET idempotency_key
+REDIS --> ORCH: not found
+ORCH -> FRAUD: evaluate(transaction)  **[sync, 15ms SLA]**
+FRAUD --> ORCH: APPROVED
+ORCH -> PAY: processPayment(txn)
+PAY -> ACC: debit(sender, amount)
+ACC -> DB: SELECT balance, version WHERE account_id = sender
+DB --> ACC: balance, version = v
+ACC -> DB: UPDATE accounts SET balance -= amt, version = v+1\nWHERE account_id = sender AND version = v
+DB --> ACC: 1 row updated
+ACC --> PAY: DEBIT_OK
+PAY -> ACC: credit(receiver, amount)
+ACC -> DB: UPDATE accounts SET balance += amt, version = v+1\nWHERE account_id = receiver AND version = v
+DB --> ACC: 1 row updated
+ACC --> PAY: CREDIT_OK
+PAY -> DB: INSERT ledger_entries + outbox_event (same DB transaction)
+DB --> PAY: COMMIT OK
+PAY --> ORCH: SUCCESS(transaction_id)
+ORCH -> REDIS: SET idempotency_key -> result (TTL 24h)
+ORCH --> GW: 200 OK
+GW --> Client: 200 OK (transaction_id, status = COMPLETED)
+
+== Asynchronous fan-out (happens AFTER the client already has a response) ==
+PAY ->> KAFKA: [async] outbox relay publishes txn-completed event
+KAFKA ->> NOTIF: [async] consume event
+NOTIF ->> Client: push notification (sub-second propagation, FR-008)
+@enduml
+
+@startuml P2P_Payment_Failure1_Duplicate
+title P2P Payment — Failure Scenario 1: Duplicate Submission (Idempotency Short-Circuit)
+autonumber
+
+actor Client
+participant "API Gateway" as GW
+participant "Transaction Orchestrator" as ORCH
+database "Redis Cluster" as REDIS
+
+note over Client: Client's first request timed out on the network,\nso it retries with the SAME idempotency_key
+
+Client -> GW: POST /transactions (idempotency_key=X, ...)  **[retry]**
+GW -> ORCH: forward request
+ORCH -> REDIS: GET idempotency_key = X
+REDIS --> ORCH: FOUND — cached result (transaction_id, status=COMPLETED)
+ORCH --> GW: 200 OK (same transaction_id, no reprocessing)
+GW --> Client: 200 OK
+
+note over ORCH: The original transaction was already fully processed.\nNo second debit/credit occurs — satisfies FR-002 and FR-003.
+@enduml
+
+@startuml P2P_Payment_Failure2_InsufficientBalance
+title P2P Payment — Failure Scenario 2: Insufficient Balance
+autonumber
+
+actor Client
+participant "API Gateway" as GW
+participant "Transaction Orchestrator" as ORCH
+participant "Fraud Detection Service" as FRAUD
+participant "Payment Processing Service" as PAY
+participant "Account Service" as ACC
+database "PostgreSQL + Citus" as DB
+
+Client -> GW: POST /transactions (amount=5000, src, dst)
+GW -> ORCH: forward request
+ORCH -> FRAUD: evaluate(transaction)
+FRAUD --> ORCH: APPROVED
+ORCH -> PAY: processPayment(txn)
+PAY -> ACC: debit(sender, 5000)
+ACC -> DB: SELECT available_balance WHERE account_id = sender
+DB --> ACC: available_balance = 1200
+ACC -> ACC: check 1200 >= 5000 ? NO
+ACC --> PAY: INSUFFICIENT_BALANCE
+PAY --> ORCH: FAILED(reason=INSUFFICIENT_BALANCE)
+ORCH -> DB: UPDATE transactions SET status=FAILED, failure_reason=INSUFFICIENT_BALANCE
+ORCH --> GW: 402 Payment Required
+GW --> Client: 402 { error: "INSUFFICIENT_BALANCE" }
+
+note over ACC: No debit was ever applied — the balance check happens\nbefore any write, so no compensation is needed here.
+@enduml
+
+@startuml P2P_Payment_Failure3_ShardFailureCompensation
+title P2P Payment — Failure Scenario 3: Receiver's Shard Fails Mid-Transaction (Saga Compensation)
+autonumber
+
+actor Client
+participant "API Gateway" as GW
+participant "Transaction Orchestrator" as ORCH
+participant "Payment Processing Service" as PAY
+participant "Account Service" as ACC
+database "PostgreSQL + Citus\n(Sender Shard)" as DB_S
+database "PostgreSQL + Citus\n(Receiver Shard)" as DB_R
+
+Client -> GW: POST /transactions (amount, src, dst)
+GW -> ORCH: forward request
+ORCH -> PAY: processPayment(txn)
+PAY -> ACC: debit(sender, amount)
+ACC -> DB_S: UPDATE accounts SET balance -= amt WHERE account_id = sender
+DB_S --> ACC: 1 row updated
+ACC --> PAY: DEBIT_OK  **<<saga step 1 committed>>**
+
+PAY -> ACC: credit(receiver, amount)
+ACC -> DB_R: UPDATE accounts SET balance += amt WHERE account_id = receiver
+DB_R --> ACC: **connection timeout — shard unreachable**
+ACC --> PAY: SHARD_UNAVAILABLE
+
+PAY --> ORCH: PARTIAL_FAILURE(step=CREDIT, reason=SHARD_UNAVAILABLE)
+note over ORCH: Saga detects step 2 failed AFTER step 1 already committed.\nThe compensating transaction for step 1 must now run.
+
+ORCH -> PAY: compensate(reverse debit on sender)
+PAY -> ACC: credit(sender, amount)  **<<compensating action>>**
+ACC -> DB_S: UPDATE accounts SET balance += amt WHERE account_id = sender
+DB_S --> ACC: 1 row updated
+ACC --> PAY: COMPENSATION_OK
+PAY --> ORCH: COMPENSATED
+
+ORCH -> DB_S: UPDATE transactions SET status=REVERSED, failure_reason=SHARD_UNAVAILABLE
+ORCH --> GW: 503 { error: "RECEIVER_SHARD_UNAVAILABLE", status: "REVERSED" }
+GW --> Client: 503 — transaction reversed, please retry
+
+note over Client: Sender's balance is back to its original value.\nNo money was lost or duplicated — FR-001 atomicity preserved.
+@enduml

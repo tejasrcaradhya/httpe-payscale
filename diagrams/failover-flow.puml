@@ -1,0 +1,44 @@
+@startuml System_Failover_Flow
+title System Failover — Database Shard Primary Failure
+autonumber
+
+participant "Health Monitor (Patroni)" as MON
+database "Primary (Shard N)" as PRIM
+database "Replica (Shard N)" as REPL
+participant "PgBouncer (Connection Pool)" as PGB
+participant "Application Services" as APP
+participant "Circuit Breaker\nCB-DB-PRIMARY" as CB
+participant "On-call Engineer" as ONCALL
+
+APP -> PGB: write request (via primary)
+PGB -> PRIM: forward write
+PRIM --> PGB: **no response — connection timeout**
+
+APP -> CB: write request
+CB -> CB: 2 failures / 5s threshold reached -> **OPEN**
+CB --> APP: fallback: queue write, route reads to replica
+
+MON -> PRIM: heartbeat check
+PRIM --> MON: **no response (missed heartbeats)**
+MON -> MON: declare primary DOWN
+MON -> REPL: promote to new PRIMARY
+REPL --> MON: promotion complete
+
+MON -> PGB: update routing config -> new primary
+PGB --> MON: ACK
+
+MON -> ONCALL: send P1 alert (immediate page, 5-min SLA)
+
+note over MON, REPL: Target: complete failover within 30s (NFR-006 RTO)
+
+CB -> CB: reset timeout expires (10s) -> **HALF-OPEN**, probe request
+CB -> PGB: probe write
+PGB -> REPL: forward write (now acting as primary)
+REPL --> PGB: write OK
+CB -> CB: probe succeeded -> **CLOSED**
+CB --> APP: resume normal writes
+
+APP -> APP: retry queued writes\n(idempotency keys prevent any duplicate processing)
+
+note over PRIM: Old primary rejoins the cluster later as a new REPLICA —\nnot immediately re-promoted, to avoid split-brain risk\n(mitigates FMEA item FM-004).
+@enduml
