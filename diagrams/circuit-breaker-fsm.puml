@@ -1,0 +1,47 @@
+@startuml Circuit_Breaker_State_Machine
+title Circuit Breaker — Generic State Machine
+' Applies to all 7 circuit breaker instances (CB-FRAUD, CB-NOTIFY, CB-DB-PRIMARY,
+' CB-DB-REPLICA, CB-CACHE, CB-EXCHANGE, CB-SETTLEMENT).
+' Per-instance thresholds, reset timeouts, and fallback behaviors are in
+' docs/09-fault-tolerance.md — the state machine structure itself is identical
+' across all of them; only the numbers differ.
+
+[*] --> CLOSED
+
+state CLOSED {
+  CLOSED : Requests pass through to the real dependency
+  CLOSED : Failures counted in a rolling time window
+}
+
+state OPEN {
+  OPEN : Requests fail immediately — no call attempted
+  OPEN : The dependency's fallback behavior executes instead
+}
+
+state HALF_OPEN {
+  HALF_OPEN : A small number of probe requests are allowed through
+  HALF_OPEN : Real calls attempted; results determine the next transition
+}
+
+CLOSED --> OPEN : failure count reaches\nthreshold within the window
+OPEN --> HALF_OPEN : reset timeout elapses
+HALF_OPEN --> CLOSED : probe request(s) succeed
+HALF_OPEN --> OPEN : probe request fails
+
+note right of OPEN
+  While OPEN, callers never wait on the
+  real dependency's timeout — they get
+  the fallback response immediately.
+  This is what prevents the thread-pool
+  exhaustion seen in bottleneck BN-003.
+end note
+
+note right of HALF_OPEN
+  Only a limited number of probes are
+  allowed through at once, so a still-
+  struggling dependency isn't immediately
+  hit with full traffic the moment the
+  reset timeout expires.
+end note
+
+@enduml
